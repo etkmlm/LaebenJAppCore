@@ -87,9 +87,9 @@ public class NetUtils {
             throw new NoConnectionException();
 
 
-        HttpsURLConnection conn = null;
+        HttpURLConnection conn = null;
         try{
-            conn = (HttpsURLConnection) u.openConnection();
+            conn = (HttpURLConnection) u.openConnection();
             if (headers != null){
                 for (RequestParameter h : headers){
                     conn.addRequestProperty(h.key(), h.value().toString());
@@ -263,7 +263,7 @@ public class NetUtils {
         return destination;
     }
 
-    private static void handleNetIO(IOException ex, HttpsURLConnection conn, String url) throws HttpException {
+    private static void handleNetIO(IOException ex, HttpURLConnection conn, String url) throws HttpException {
         if (ex.getMessage().startsWith("Server returned")){
             String[] spl = ex.getMessage().split(":");
             if (spl.length != 4 || conn == null)
