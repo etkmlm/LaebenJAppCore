@@ -1,6 +1,7 @@
 package com.laeben.core.entity;
 
 import com.google.gson.*;
+import com.google.gson.annotations.JsonAdapter;
 
 import java.lang.reflect.Type;
 import java.text.DateFormat;
@@ -26,7 +27,12 @@ public class Announcement {
 
     private TranslationBundle title;
     private TranslationBundle content;
+    @JsonAdapter(DateFactory.class)
     private Date date;
+
+    private Date start_time;
+    private Date end_time;
+
     private List<String> versions;
 
     private int duration;

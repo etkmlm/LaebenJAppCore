@@ -72,6 +72,14 @@ public class NetUtils {
      * @return the content
      */
     public static String urlToString(String url, List<RequestParameter> headers) throws NoConnectionException, HttpException {
+        return inputStreamToString(urlToStream(url, headers));
+    }
+
+    /**
+     * Get the input stream content of the url with headers.
+     * @return the content
+     */
+    public static InputStream urlToStream(String url, List<RequestParameter> headers) throws NoConnectionException, HttpException {
         if (url == null)
             return null;
 
@@ -95,7 +103,7 @@ public class NetUtils {
                     conn.addRequestProperty(h.key(), h.value().toString());
                 }
             }
-            return inputStreamToString(conn.getInputStream());
+            return conn.getInputStream();
         }
         catch (FileNotFoundException f){
             return null;

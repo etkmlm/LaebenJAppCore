@@ -2,8 +2,11 @@ package com.laeben.core;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
 import com.laeben.core.entity.Announcement;
 import com.laeben.core.entity.LaebenAppFile;
+import com.laeben.core.entity.RequestParameter;
 import com.laeben.core.entity.TranslationBundle;
 import com.laeben.core.entity.exception.HttpException;
 import com.laeben.core.entity.exception.NoConnectionException;
@@ -12,9 +15,12 @@ import com.laeben.core.util.RequesterFactory;
 import com.laeben.core.util.events.BaseEvent;
 import com.laeben.core.util.events.ValueEvent;
 
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.*;
 
 public class LaebenApp {
     public static final String EXCEPTION = "exception";
@@ -25,7 +31,7 @@ public class LaebenApp {
     private static final EventHandler<BaseEvent> handler = new EventHandler<>();
 
     private static final Gson GSON = new GsonBuilder()
-            .registerTypeAdapter(Date.class, new Announcement.DateFactory())
+            //.registerTypeAdapter(Date.class, new Announcement.DateFactory())
             .registerTypeAdapter(TranslationBundle.class, new TranslationBundle.TranslationBundleFactory())
             .create();
 
@@ -34,8 +40,6 @@ public class LaebenApp {
     private double latest;
     private String name;
     private String icon;
-    private List<LaebenAppFile> files;
-    private List<Announcement> announcements;
 
     private static boolean isOffline;
 
@@ -76,8 +80,6 @@ public class LaebenApp {
 
         LaebenApp app = GSON.fromJson(str, LaebenApp.class);
         app.id = id;
-        if (app.announcements != null)
-            app.announcements.removeIf(Objects::isNull);
         return app;
     }
 
@@ -104,23 +106,64 @@ public class LaebenApp {
         return t;
     }
 
-    public List<LaebenAppFile> getFiles(){
-        if (files == null)
-            files = List.of();
-        return files;
+    public <T> List<T> getObjects(String path, Gson gson, Class<T> clazz, List<RequestParameter> filters) throws NoConnectionException, HttpException {
+        InputStream str = requester.create().to("apps").to(id).to(path + ".json").withParams(filters).getStream();
+        if (str == null)
+            return null;
+
+        var list = new ArrayList<T>();
+
+        if (gson == null)
+            gson = GSON;
+
+        boolean isArray;
+
+        try (final JsonReader reader = new JsonReader(new InputStreamReader(str))){
+            isArray = reader.peek() == JsonToken.BEGIN_ARRAY;
+            if (isArray) reader.beginArray();
+            else reader.beginObject();
+
+            while (reader.hasNext()){
+                if (!isArray) reader.nextName(); // index
+                if (reader.peek() == JsonToken.NULL) continue;
+                list.add(gson.fromJson(reader, clazz));
+            }
+
+            if (isArray) reader.endArray();
+            else reader.endObject();
+        } catch (IOException e) {
+            handleException(e);
+            return null;
+        }
+
+        return Collections.unmodifiableList(list);
     }
 
-    public List<Announcement> getAnnouncements(){
-        if (announcements == null)
-            announcements = List.of();
-        return announcements;
+    public List<LaebenAppFile> getFiles(double fromVersion, double toVersion) throws NoConnectionException, HttpException {
+        final var filesTemp = getObjects("files", GSON, LaebenAppFile.class, null);
+        if (filesTemp == null) return List.of();
+
+        return Collections.unmodifiableList(filesTemp);
+    }
+
+    public List<Announcement> getAnnouncements() throws NoConnectionException, HttpException {
+        final var aTemp = getObjects("announcements", GSON, Announcement.class, List.of(
+            new RequestParameter("orderBy", "\"end_time\""),
+            new RequestParameter("startAt", "\"" + Instant.now().atZone(ZoneOffset.UTC) + "\"")
+        ));
+        if (aTemp == null) return List.of();
+
+        return Collections.unmodifiableList(aTemp);
     }
 
     public static boolean isOffline(){
         return isOffline;
     }
 
-    public LaebenAppFile getLatest(){
-        return getFiles().stream().filter(x -> x.version() == latest).findFirst().orElse(null);
+    public LaebenAppFile getLatest() throws NoConnectionException, HttpException {
+        var latestVersion = getObject("latest", GSON, Double.class);
+        var latestFile = getObject("latestFile", null, String.class);
+
+        return new LaebenAppFile(latestFile, latestVersion);
     }
 }

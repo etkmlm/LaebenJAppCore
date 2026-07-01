@@ -4,6 +4,7 @@ import com.laeben.core.entity.exception.HttpException;
 import com.laeben.core.entity.exception.NoConnectionException;
 import com.laeben.core.entity.RequestParameter;
 
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
@@ -92,6 +93,14 @@ public class Requester {
      */
     public String getString() throws NoConnectionException, HttpException {
         return NetUtils.urlToString(getUrl(), headers);
+    }
+
+    /**
+     * Get content as an input stream.
+     * @return the content
+     */
+    public InputStream getStream() throws NoConnectionException, HttpException {
+        return NetUtils.urlToStream(getUrl(), headers);
     }
 
     /**
