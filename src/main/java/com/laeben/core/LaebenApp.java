@@ -107,7 +107,9 @@ public class LaebenApp {
     }
 
     public <T> List<T> getObjects(String path, Gson gson, Class<T> clazz, List<RequestParameter> filters) throws NoConnectionException, HttpException {
-        InputStream str = requester.create().to("apps").to(id).to(path + ".json").withParams(filters).getStream();
+        var r = requester.create().to("apps").to(id).to(path + ".json");
+        if (filters != null) r.withParams(filters);
+        InputStream str = r.getStream();
         if (str == null)
             return null;
 
@@ -119,9 +121,18 @@ public class LaebenApp {
         boolean isArray;
 
         try (final JsonReader reader = new JsonReader(new InputStreamReader(str))){
-            isArray = reader.peek() == JsonToken.BEGIN_ARRAY;
-            if (isArray) reader.beginArray();
-            else reader.beginObject();
+            switch (reader.peek()){
+                case BEGIN_ARRAY:
+                    isArray = true;
+                    reader.beginArray();
+                    break;
+                case BEGIN_OBJECT:
+                    isArray = false;
+                    reader.beginObject();
+                    break;
+                default:
+                    return null;
+            }
 
             while (reader.hasNext()){
                 if (!isArray) reader.nextName(); // index
@@ -161,9 +172,6 @@ public class LaebenApp {
     }
 
     public LaebenAppFile getLatest() throws NoConnectionException, HttpException {
-        var latestVersion = getObject("latest", GSON, Double.class);
-        var latestFile = getObject("latestFile", null, String.class);
-
-        return new LaebenAppFile(latestFile, latestVersion);
+        return getObject("latestMeta", GSON, LaebenAppFile.class);
     }
 }

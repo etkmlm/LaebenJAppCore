@@ -7,6 +7,7 @@ public class LaebenAppFile {
     public LaebenAppFile(){}
     public LaebenAppFile(String url, double version) {
         this.url = url;
+        this.version = version;
     }
 
     public String url(){
