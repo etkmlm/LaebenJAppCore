@@ -6,8 +6,8 @@ package com.laeben.core.util.events;
  * Includes the source, the key, current, and the total value.
  */
 public class ProgressEvent extends KeyEvent {
-    public long current;
-    public long total;
+    private final long current;
+    private final long total;
 
     public ProgressEvent(String key, long current, long total) {
         super(key);
