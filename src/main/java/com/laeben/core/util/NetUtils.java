@@ -31,8 +31,8 @@ public class NetUtils {
         return handler;
     }
 
-    private static boolean stopRequested;
-    private static boolean downloading;
+    private static volatile boolean stopRequested;
+    private static volatile boolean downloading;
 
     /**
      * Convert input stream to string.
@@ -165,7 +165,7 @@ public class NetUtils {
     /**
      * Stop the continuing download process.
      */
-    public static void stop(){
+    public synchronized static void stop(){
         if (downloading)
             stopRequested = true;
     }
