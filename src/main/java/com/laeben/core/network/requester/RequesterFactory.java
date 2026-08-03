@@ -1,4 +1,4 @@
-package com.laeben.core.util;
+package com.laeben.core.network.requester;
 
 
 public class RequesterFactory{

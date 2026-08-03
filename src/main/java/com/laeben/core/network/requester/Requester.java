@@ -1,8 +1,9 @@
-package com.laeben.core.util;
+package com.laeben.core.network.requester;
 
 import com.laeben.core.entity.exception.HttpException;
 import com.laeben.core.entity.exception.NoConnectionException;
 import com.laeben.core.entity.RequestParameter;
+import com.laeben.core.network.Network;
 
 import java.io.InputStream;
 import java.net.MalformedURLException;
@@ -92,7 +93,7 @@ public class Requester {
      * @return the content
      */
     public String getString() throws NoConnectionException, HttpException {
-        return NetUtils.urlToString(getUrl(), headers);
+        return Network.urlToString(getUrl(), headers);
     }
 
     /**
@@ -100,7 +101,7 @@ public class Requester {
      * @return the content
      */
     public InputStream getStream() throws NoConnectionException, HttpException {
-        return NetUtils.urlToStream(getUrl(), headers);
+        return Network.urlToStream(getUrl(), headers);
     }
 
     /**
@@ -109,7 +110,7 @@ public class Requester {
      * @return the response
      */
     public String post(String content) throws NoConnectionException {
-        return NetUtils.post(getUrl(), content, headers);
+        return Network.post(getUrl(), content, headers);
     }
 
     /**

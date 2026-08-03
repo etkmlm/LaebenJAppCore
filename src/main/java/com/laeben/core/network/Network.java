@@ -1,4 +1,4 @@
-package com.laeben.core.util;
+package com.laeben.core.network;
 
 import com.laeben.core.LaebenApp;
 import com.laeben.core.entity.exception.HttpException;
@@ -6,6 +6,8 @@ import com.laeben.core.entity.exception.NoConnectionException;
 import com.laeben.core.entity.Path;
 import com.laeben.core.entity.RequestParameter;
 import com.laeben.core.entity.exception.StopException;
+import com.laeben.core.network.entity.NetworkToken;
+import com.laeben.core.util.EventHandler;
 import com.laeben.core.util.events.ValueEvent;
 import com.laeben.core.util.events.ProgressEvent;
 
@@ -17,12 +19,15 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Network utils for communication.
  */
-public class NetUtils {
+public class Network {
     public static final String DOWNLOAD = "download";
 
     private static final EventHandler<ProgressEvent> handler = new EventHandler<>();
@@ -31,8 +36,14 @@ public class NetUtils {
         return handler;
     }
 
-    private static volatile boolean stopRequested;
-    private static volatile boolean downloading;
+    private static final Set<NetworkToken> currentDownloads = new HashSet<>();
+
+    public static boolean hasDownloads(){
+        return !currentDownloads.isEmpty();
+    }
+    public static Set<NetworkToken> getCurrentDownloads(){
+        return Collections.unmodifiableSet(currentDownloads);
+    }
 
     /**
      * Convert input stream to string.
@@ -163,13 +174,11 @@ public class NetUtils {
     }
 
     /**
-     * Stop the continuing download process.
+     * Stops all continuing download processes.
      */
-    public synchronized static void stop(){
-        if (downloading)
-            stopRequested = true;
+    public static void stop(){
+        currentDownloads.forEach(NetworkToken::stop);
     }
-
 
     /**
      * Patches and disables SSL. :))
@@ -208,23 +217,23 @@ public class NetUtils {
 
     /**
      * Download a file from the net.
-     * @param url destination url
-     * @param destination file or directory path relative to useOriginalName
-     * @param useOriginalName use destination as a file or base dir
+     * @param token network token
      * @param handle progress handling
      * @return path of the downloaded file
      */
-    public static Path download(String url, Path destination, boolean useOriginalName, boolean handle) throws NoConnectionException, StopException, HttpException, FileNotFoundException {
-
+    public static Path download(NetworkToken token, boolean handle) throws NoConnectionException, StopException, HttpException, FileNotFoundException {
         if (offline)
             throw new NoConnectionException();
         HttpsURLConnection conn = null;
-        downloading = true;
+        String url = token.getUrl();
+        Path destination = token.getDestination();
         try{
+            currentDownloads.add(token);
+
             URL oldUri = new URL(url);
             url = url.replace(" ", "%20");
             URL uri = new URL(url);
-            if (useOriginalName){
+            if (token.useOriginalName()){
                 String fileName = getFileNameFromUrl(oldUri);
                 destination = destination.to(fileName);
             }
@@ -241,7 +250,7 @@ public class NetUtils {
                 byte[] buffer = new byte[4096];
                 int read;
                 while ((read = stream.read(buffer)) != -1){
-                    if (stopRequested)
+                    if (token.stopRequested())
                         throw new StopException();
                     file.write(buffer, 0, read);
                     progress += buffer.length;
@@ -257,15 +266,11 @@ public class NetUtils {
         catch (FileNotFoundException fo){
             throw fo;
         }
-        catch (StopException e){
-            stopRequested = false;
-            throw e;
-        }
         catch (IOException ex){
             handleNetIO(ex, conn, url);
         }
         finally {
-            downloading = false;
+            currentDownloads.remove(token);
         }
 
         return destination;
@@ -406,7 +411,7 @@ public class NetUtils {
         return offline;
     }
     public static void setOffline(boolean offline) {
-        NetUtils.offline = offline;
+        Network.offline = offline;
     }
 
     /**

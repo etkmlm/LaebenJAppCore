@@ -11,7 +11,7 @@ import com.laeben.core.entity.TranslationBundle;
 import com.laeben.core.entity.exception.HttpException;
 import com.laeben.core.entity.exception.NoConnectionException;
 import com.laeben.core.util.EventHandler;
-import com.laeben.core.util.RequesterFactory;
+import com.laeben.core.network.requester.RequesterFactory;
 import com.laeben.core.util.events.BaseEvent;
 import com.laeben.core.util.events.ValueEvent;
 
