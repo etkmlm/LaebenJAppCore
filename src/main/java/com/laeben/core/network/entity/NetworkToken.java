@@ -1,15 +1,12 @@
 package com.laeben.core.network.entity;
 
+import com.laeben.core.entity.CancellableToken;
 import com.laeben.core.entity.Path;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
-public class NetworkToken {
+public class NetworkToken extends CancellableToken {
     private final String url;
     private final Path destination;
     private final boolean uon;
-
-    private AtomicBoolean stopToken;
 
     private NetworkToken(String url, Path destination, boolean useOriginalName) {
         this.url = url;
@@ -26,19 +23,6 @@ public class NetworkToken {
      */
     public static NetworkToken create(String url, Path destination, boolean useOriginalName) {
         return new NetworkToken(url, destination, useOriginalName);
-    }
-
-    public boolean stopRequested(){
-        return stopToken != null && stopToken.get();
-    }
-    public void stop(){
-        if (stopToken != null)
-            stopToken.set(true);
-        else stopToken = new AtomicBoolean(true);
-    }
-    public NetworkToken useStopToken(AtomicBoolean token){
-        this.stopToken = token;
-        return this;
     }
 
     public String getUrl(){
