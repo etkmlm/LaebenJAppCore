@@ -3,7 +3,7 @@ package com.laeben.core.network.entity;
 import com.laeben.core.entity.CancellableToken;
 import com.laeben.core.entity.Path;
 
-public class NetworkToken extends CancellableToken {
+public class NetworkToken extends CancellableToken<NetworkToken> {
     private final String url;
     private final Path destination;
     private final boolean uon;
