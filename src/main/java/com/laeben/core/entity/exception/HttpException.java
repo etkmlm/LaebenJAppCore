@@ -1,7 +1,5 @@
 package com.laeben.core.entity.exception;
 
-import java.io.IOException;
-
 public class HttpException extends Exception {
     private final String message;
     private final int code;

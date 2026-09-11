@@ -10,22 +10,22 @@ import com.laeben.core.entity.RequestParameter;
 import com.laeben.core.entity.TranslationBundle;
 import com.laeben.core.entity.exception.HttpException;
 import com.laeben.core.entity.exception.NoConnectionException;
+import com.laeben.core.entity.exception.StopException;
 import com.laeben.core.util.EventHandler;
 import com.laeben.core.network.requester.RequesterFactory;
 import com.laeben.core.util.events.BaseEvent;
-import com.laeben.core.util.events.ValueEvent;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.InterruptedIOException;
+import java.nio.channels.ClosedByInterruptException;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.*;
 
 public class LaebenApp {
     public static final String EXCEPTION = "exception";
-    public static final String NET_EXCEPTION = "netException";
-
     private static final String FIREBASE = "https://laeben-update-default-rtdb.europe-west1.firebasedatabase.app/";
     private static final RequesterFactory requester = new RequesterFactory(FIREBASE);
     private static final EventHandler<BaseEvent> handler = new EventHandler<>();
@@ -69,11 +69,7 @@ public class LaebenApp {
         return handler;
     }
 
-    public static void handleException(Exception e){
-        getHandler().execute(new ValueEvent(EXCEPTION, e));
-    }
-
-    public static LaebenApp get(String id, String defaultName) throws NoConnectionException, HttpException {
+    public static LaebenApp get(String id, String defaultName) throws NoConnectionException, HttpException, IOException, StopException {
         String str = requester.create().to("apps").to(id + ".json").getString();
         if (str == null)
             return LaebenApp.offline(id, defaultName);
@@ -92,7 +88,7 @@ public class LaebenApp {
         return this;
     }
 
-    public <T> T getObject(String path, Gson gson, Class<T> clazz) throws NoConnectionException, HttpException {
+    public <T> T getObject(String path, Gson gson, Class<T> clazz) throws NoConnectionException, HttpException, IOException, StopException {
         String str = requester.create().to("apps").to(id).to(path + ".json").getString();
         if (str == null || str.equals("null"))
             return null;
@@ -106,7 +102,7 @@ public class LaebenApp {
         return t;
     }
 
-    public <T> List<T> getObjects(String path, Gson gson, Class<T> clazz, List<RequestParameter> filters) throws NoConnectionException, HttpException {
+    public <T> List<T> getObjects(String path, Gson gson, Class<T> clazz, List<RequestParameter> filters) throws NoConnectionException, HttpException, IOException, StopException {
         var r = requester.create().to("apps").to(id).to(path + ".json");
         if (filters != null) r.withParams(filters);
         InputStream str = r.getStream();
@@ -142,22 +138,23 @@ public class LaebenApp {
 
             if (isArray) reader.endArray();
             else reader.endObject();
-        } catch (IOException e) {
-            handleException(e);
-            return null;
+        }
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
 
         return Collections.unmodifiableList(list);
     }
 
-    public List<LaebenAppFile> getFiles(double fromVersion, double toVersion) throws NoConnectionException, HttpException {
+    public List<LaebenAppFile> getFiles(double fromVersion, double toVersion) throws NoConnectionException, HttpException, IOException, StopException {
         final var filesTemp = getObjects("files", GSON, LaebenAppFile.class, null);
         if (filesTemp == null) return List.of();
 
         return Collections.unmodifiableList(filesTemp);
     }
 
-    public List<Announcement> getAnnouncements() throws NoConnectionException, HttpException {
+    public List<Announcement> getAnnouncements() throws NoConnectionException, HttpException, IOException, StopException {
         final var aTemp = getObjects("announcements", GSON, Announcement.class, List.of(
             new RequestParameter("orderBy", "\"end_time\""),
             new RequestParameter("startAt", "\"" + Instant.now().atZone(ZoneOffset.UTC) + "\"")
@@ -171,7 +168,7 @@ public class LaebenApp {
         return isOffline;
     }
 
-    public LaebenAppFile getLatest() throws NoConnectionException, HttpException {
+    public LaebenAppFile getLatest() throws NoConnectionException, HttpException, IOException, StopException {
         return getObject("latestMeta", GSON, LaebenAppFile.class);
     }
 }

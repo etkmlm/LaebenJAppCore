@@ -7,7 +7,7 @@ import java.util.stream.Collectors;
 
 public class StrUtil {
     private static final char[] INVALID_CHARS = {
-            34,60,62,124,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,58,42,63,92,47
+            34,60,62,124,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,58,42,63,92,47,35
     };
 
     public static String trimEnd(String str, char c){
@@ -51,7 +51,7 @@ public class StrUtil {
             }
             source = source.replace(String.valueOf(i), "");
         }
-        return source;
+        return source.trim();
     }
 
     public static String toUpperFirst(String target){
@@ -63,6 +63,8 @@ public class StrUtil {
     }
 
     public static String sub(String t, int s, int e){
+        if (t == null || t.isEmpty()) return t;
+
         return t.length() > e-s ? t.substring(s, e) : t;
     }
 }

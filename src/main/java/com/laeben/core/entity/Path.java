@@ -1,6 +1,6 @@
 package com.laeben.core.entity;
 
-import com.laeben.core.LaebenApp;
+import com.laeben.core.entity.exception.StopException;
 import com.laeben.core.util.StrUtil;
 import org.apache.commons.compress.archivers.ArchiveEntry;
 import org.apache.commons.compress.archivers.ArchiveInputStream;
@@ -10,11 +10,11 @@ import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
 
 import java.io.*;
+import java.nio.channels.ClosedByInterruptException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -25,6 +25,8 @@ import java.util.zip.GZIPInputStream;
  * Advanced OS-based IO ecosystem.
  **/
 public class Path{
+    private static final int BUFFER_SIZE = 16384;
+
     private java.nio.file.Path root;
     private Boolean isDirLocal;
 
@@ -111,7 +113,7 @@ public class Path{
      * Move path.
      * @param newPath path of the new file or directory
      **/
-    public void move(Path newPath){
+    public void move(Path newPath) throws IOException, StopException {
         copy(newPath);
 
         delete();
@@ -161,34 +163,18 @@ public class Path{
     }
 
     /**
-     * Read all bytes from input stream.
-     * @return bytes
-     **/
-    public byte[] readAllBytes(InputStream str) throws IOException {
-        List<Integer> bytes = new ArrayList<>();
-
-        int read;
-        while ((read = str.read()) != -1){
-            bytes.add(read);
-        }
-
-        int size = bytes.size();
-        byte[] all = new byte[size];
-        for (int i = 0; i < size; i++)
-            all[i] = bytes.get(i).byteValue();
-
-        return all;
-    }
-
-    /**
      * Open path as gzip file.
      * @return content as bytes
      **/
-    public byte[] openAsGzip() throws IOException {
+    public byte[] openAsGzip() throws IOException, StopException {
         try(InputStream file = Files.newInputStream(root.toFile().toPath());
             GZIPInputStream gzip = new GZIPInputStream(file)){
 
             return gzip.readAllBytes();
+        }
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
 
@@ -196,12 +182,13 @@ public class Path{
      * Get size of the file.
      * @return size as long
      **/
-    public long getSize(){
+    public long getSize() throws StopException, IOException {
         try{
             return Files.size(root);
         }
-        catch (IOException e){
-            return 0;
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
 
@@ -210,13 +197,14 @@ public class Path{
      * <br/>
      * Writes content to the file from the beginning.
      **/
-    public void write(String content){
+    public void write(String content) throws StopException, IOException {
         try{
             prepare();
             Files.write(root, content.getBytes(StandardCharsets.UTF_8));
         }
-        catch (IOException e){
-            LaebenApp.handleException(e);
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
 
@@ -226,26 +214,28 @@ public class Path{
      * <br/>
      * Writes content to the file from the last byte.
      **/
-    public void append(String content){
+    public void append(String content) throws IOException, StopException {
         prepare();
         try (FileWriter writer = new FileWriter(root.toFile(), true)) {
             writer.write(content);
         }
-        catch (IOException e){
-            LaebenApp.handleException(e);
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
     /**
      * Read file as string.
      * @return content
      **/
-    public String read(){
+    public String read() throws IOException, StopException {
         try{
             prepare();
             return Files.readString(root);
         }
-        catch (IOException e){
-            return "";
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
 
@@ -309,19 +299,17 @@ public class Path{
         return new ZipArchiveEntry(p.toFile(), newPath.isEmpty() ? p.getName() : newPath);
     }
 
-    private void zipEntry(ZipArchiveOutputStream stream, Path root, Path p){
-        try {
-            stream.putArchiveEntry(getEntry(root, p));
-        } catch (IOException ignored) {
-
-        }
+    private void zipEntry(ZipArchiveOutputStream stream, Path root, Path p) throws StopException, IOException {
+        stream.putArchiveEntry(getEntry(root, p));
         if (p.isDirectory()){
-            p.getFiles().forEach(x -> zipEntry(stream, root, x));
+            for (var x : p.getFiles()){
+                zipEntry(stream, root, x);
+            }
         }
         else{
             try(FileInputStream str = new FileInputStream(p.toFile())) {
-                stream.write(str.readAllBytes());
-            } catch (IOException ignored) {}
+                transferStreams(new byte[BUFFER_SIZE], str, stream);
+            }
         }
 
     }
@@ -330,13 +318,14 @@ public class Path{
      * Compress path as zip.
      * @param fileName file name of the zip
      **/
-    public void zip(Path fileName){
+    public void zip(Path fileName) throws IOException, StopException {
         try(ZipArchiveOutputStream stream = new ZipArchiveOutputStream(fileName.toFile())){
             zipEntry(stream, this, this);
             stream.closeArchiveEntry();
         }
-        catch (IOException e){
-            LaebenApp.handleException(e);
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
 
@@ -344,13 +333,13 @@ public class Path{
      * Get the first entry from the zip file.
      * @return name of the entry
      **/
-    public String getFirstZipEntry(){
+    public String getFirstZipEntry() throws IOException, StopException {
         try(ZipArchiveInputStream stream = new ZipArchiveInputStream(Files.newInputStream(toFile().toPath()))){
             return stream.getNextEntry().getName();
         }
-        catch (IOException e){
-            LaebenApp.handleException(e);
-            return null;
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
 
@@ -358,7 +347,7 @@ public class Path{
      * Get the main folder of the zip file.
      * @return name of the folder
      **/
-    public String getZipMainFolder(){
+    public String getZipMainFolder() throws IOException, StopException {
         String entry = getFirstZipEntry();
         if (entry == null)
             return null;
@@ -389,10 +378,13 @@ public class Path{
      * @param paths possible relative paths of the entry (foo/bar.json, foo/foo, etc.)
      * @return entry byte stream
      **/
-    public PossibilityResult<ByteArrayOutputStream> tryGetZipEntry(String... paths){
+    public PossibilityResult<ByteArrayOutputStream> tryGetZipEntry(String... paths) throws IOException, StopException {
         try(ZipArchiveInputStream stream = new ZipArchiveInputStream(Files.newInputStream(toFile().toPath()));
             ByteArrayOutputStream bytes = new ByteArrayOutputStream()){
             ZipArchiveEntry e;
+
+            byte[] buff = new byte[BUFFER_SIZE];
+
             while ((e = stream.getNextEntry()) != null) {
                 int px = -1;
 
@@ -409,18 +401,16 @@ public class Path{
 
                 if (!stream.canReadEntryData(e))
                     return null;
-                int read;
-                byte[] buff = new byte[4096];
-                while ((read = stream.read(buff)) != -1)
-                    bytes.write(buff, 0, read);
+
+                transferStreams(buff, stream, bytes);
 
                 return new PossibilityResult<>(px, bytes);
             }
             return null;
         }
-        catch (IOException e){
-            LaebenApp.handleException(e);
-            return null;
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
 
@@ -429,19 +419,29 @@ public class Path{
      * @param paths possible relative paths of the entry (foo/bar.json, foo/foo, etc.)
      * @return read string
      **/
-    public PossibilityResult<String> tryReadZipEntry(String... paths){
+    public PossibilityResult<String> tryReadZipEntry(String... paths) throws IOException, StopException {
         var n = tryGetZipEntry(paths);
-        try(var str = n.getValue()){
+        try(ByteArrayOutputStream str = n.getValue()){
             return new PossibilityResult<>(n.getOrder(), str.toString());
-        } catch (Exception e) {
+        }
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
+        }
+        catch (Exception e) {
             return null;
         }
     }
 
-    private void extract(Path destination, ArchiveInputStream stream, List<String> exclude) throws IOException {
+    private void extract(Path destination, ArchiveInputStream<?> stream, List<String> exclude) throws IOException, StopException {
         ArchiveEntry entry;
 
+        byte[] buffer = new byte[BUFFER_SIZE];
+
         while ((entry = stream.getNextEntry()) != null){
+            if (Thread.currentThread().isInterrupted())
+                throw new StopException();
+
             String name = StrUtil.pure(entry.getName(), new char[]{'/'});
             if (exclude.stream().anyMatch(a -> StrUtil.pure(a).equals(name)))
                 continue;
@@ -453,10 +453,7 @@ public class Path{
             else {
                 new File(ff.getParent()).mkdirs();
                 try(FileOutputStream f = new FileOutputStream(ff)) {
-                    byte[] buffer = new byte[16384];
-                    int read;
-                    while ((read = stream.read(buffer)) != -1)
-                        f.write(buffer, 0, read);
+                    transferStreams(buffer, stream, f);
                 }
                 pp.execPosix();
 
@@ -465,30 +462,24 @@ public class Path{
         }
     }
 
-    private void extractTar(Path destination, List<String> exclude){
+    private void extractTar(Path destination, List<String> exclude) throws StopException, IOException {
         try(GZIPInputStream gzip = new GZIPInputStream(Files.newInputStream(toFile().toPath()));
             TarArchiveInputStream tar = new TarArchiveInputStream(gzip)){
             extract(destination, tar, exclude);
         }
-        catch (IOException e){
-            LaebenApp.handleException(e);
-        }
     }
 
-    private void extractZip(Path destination, List<String> exclude){
+    private void extractZip(Path destination, List<String> exclude) throws StopException, IOException {
         try(FileInputStream file = new FileInputStream(root.toFile());
             ZipArchiveInputStream zip = new ZipArchiveInputStream(file)){
             extract(destination, zip, exclude);
-        }
-        catch (IOException e){
-            LaebenApp.handleException(e);
         }
     }
 
     /**
      * Mark file with full access for Unix systems.
      **/
-    public void execPosix(){
+    public void execPosix() throws IOException {
         try{
             HashSet<PosixFilePermission> set = new HashSet<>();
             set.add(PosixFilePermission.OWNER_WRITE);
@@ -502,9 +493,6 @@ public class Path{
             set.add(PosixFilePermission.OTHERS_EXECUTE);
             Files.setPosixFilePermissions(root, set);
         }
-        catch (IOException e){
-            LaebenApp.handleException(e);
-        }
         catch (UnsupportedOperationException ignored){
 
         }
@@ -515,18 +503,24 @@ public class Path{
      * @param destination destination directory, not file
      * @param exclude excluded file names
      **/
-    public void extract(Path destination, List<String> exclude){
+    public void extract(Path destination, List<String> exclude) throws StopException, IOException {
         if (destination == null)
             destination = new Path(root.getParent());
 
         if (exclude == null)
             exclude = List.of();
 
-        if (getExtension().equals("gz")){
-            extractTar(destination, exclude);
+        try{
+            if (getExtension().equals("gz")){
+                extractTar(destination, exclude);
+            }
+            else if (getExtension().equals("zip") || getExtension().equals("jar"))
+                extractZip(destination, exclude);
         }
-        else if (getExtension().equals("zip") || getExtension().equals("jar"))
-            extractZip(destination, exclude);
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
+        }
     }
 
     /**
@@ -540,8 +534,16 @@ public class Path{
      * Copy the path to the destination. File will be overwritten default.
      * @param destination destination file or directory
      */
-    public void copy(Path destination){
+    public void copy(Path destination) throws IOException, StopException {
         copy(destination, true);
+    }
+
+    private static void transferStreams(byte[] buffer, InputStream in, OutputStream out) throws IOException, StopException {
+        int read;
+        while ((read = in.read(buffer)) > 0){
+            if (Thread.currentThread().isInterrupted()) throw new StopException();
+            out.write(buffer, 0, read);
+        }
     }
 
     /**
@@ -549,7 +551,7 @@ public class Path{
      * @param destination destination file or directory
      * @param overwrite should be overwritten if exists
      **/
-    public void copy(Path destination, boolean overwrite){
+    public void copy(Path destination, boolean overwrite) throws StopException, IOException {
         try{
             //destination.prepare();
             if (destination.exists() && !isDirectory()){
@@ -557,14 +559,22 @@ public class Path{
                     return;
                 destination.delete();
             }
-            if (isDirectory())
-                getFiles().forEach(x -> x.copy(destination.to(x.getName())));
+            if (isDirectory()){
+                for (var x : getFiles()){
+                    x.copy(destination.to(x.getName()));
+                }
+            }
             else{
                 destination.forceSetDir(false).prepare();
-                Files.copy(root, destination.root);
+                try(final var inFile = new FileInputStream(toFile());
+                    final var outFile = new FileOutputStream(destination.toFile())){
+                    transferStreams(new byte[BUFFER_SIZE], inFile, outFile);
+                }
             }
-        }catch (IOException e){
-            LaebenApp.handleException(e);
+        }
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
 
@@ -572,12 +582,12 @@ public class Path{
      * Read all bytes of the file.
      * @return bytes
      **/
-    public byte[] readBytes(){
+    public byte[] readBytes() throws StopException, IOException {
         try {
             return Files.readAllBytes(root);
-        } catch (Exception e) {
-            LaebenApp.handleException(e);
-            return new byte[0];
+        } catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
     @Override

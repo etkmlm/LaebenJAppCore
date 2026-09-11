@@ -1,15 +1,11 @@
 package com.laeben.core.network;
 
-import com.laeben.core.LaebenApp;
 import com.laeben.core.entity.exception.HttpException;
 import com.laeben.core.entity.exception.NoConnectionException;
 import com.laeben.core.entity.Path;
 import com.laeben.core.entity.RequestParameter;
 import com.laeben.core.entity.exception.StopException;
 import com.laeben.core.network.entity.NetworkToken;
-import com.laeben.core.util.EventHandler;
-import com.laeben.core.util.events.ValueEvent;
-import com.laeben.core.util.events.ProgressEvent;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
@@ -17,7 +13,10 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.*;
 import java.net.*;
+import java.nio.channels.ClosedByInterruptException;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.HashSet;
@@ -29,12 +28,6 @@ import java.util.Set;
  */
 public class Network {
     public static final String DOWNLOAD = "download";
-
-    private static final EventHandler<ProgressEvent> handler = new EventHandler<>();
-
-    public static EventHandler<ProgressEvent> getHandler(){
-        return handler;
-    }
 
     private static final Set<NetworkToken> currentDownloads = new HashSet<>();
 
@@ -50,21 +43,18 @@ public class Network {
      * @param s the input stream
      * @return the content
      */
-    public static String inputStreamToString(InputStream s){
-        String read = "{}";
+    public static String inputStreamToString(InputStream s) throws IOException, StopException {
+        String read;
         try (BufferedInputStream stream = new BufferedInputStream(s);
              ByteArrayOutputStream buffer = new ByteArrayOutputStream()
         ){
-            int r;
-            while ((r = stream.read()) != -1){
-                buffer.write(r);
-            }
-
+            stream.transferTo(buffer);
 
             read = buffer.toString(StandardCharsets.UTF_8);
         }
-        catch (IOException e){
-            LaebenApp.getHandler().execute(new ValueEvent(LaebenApp.EXCEPTION, e));
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
 
         return read;
@@ -74,7 +64,7 @@ public class Network {
      * Get the content of the url as a string.
      * @return the content
      */
-    public static String urlToString(String url) throws NoConnectionException, HttpException {
+    public static String urlToString(String url) throws NoConnectionException, HttpException, IOException, StopException {
         return urlToString(url, null);
     }
 
@@ -82,23 +72,22 @@ public class Network {
      * Get the content of the url as a string with headers.
      * @return the content
      */
-    public static String urlToString(String url, List<RequestParameter> headers) throws NoConnectionException, HttpException {
+    public static String urlToString(String url, List<RequestParameter> headers) throws NoConnectionException, HttpException, IOException, StopException {
         return inputStreamToString(urlToStream(url, headers));
     }
 
     /**
      * Get the input stream content of the url with headers.
-     * @return the content
+     * @return the content, null if the url was invalid or file was not found
      */
-    public static InputStream urlToStream(String url, List<RequestParameter> headers) throws NoConnectionException, HttpException {
+    public static InputStream urlToStream(String url, List<RequestParameter> headers) throws NoConnectionException, IOException, HttpException, StopException {
         if (url == null)
             return null;
 
         URL u;
         try {
             u = new URL(url);
-        } catch (MalformedURLException e) {
-            LaebenApp.handleException(e);
+        } catch (MalformedURLException ignored) {
             return null;
         }
 
@@ -122,6 +111,10 @@ public class Network {
         catch (UnknownHostException | NoRouteToHostException ignored){
             throw new NoConnectionException();
         }
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
+        }
         catch (IOException e){
             handleNetIO(e, conn, url);
             return null;
@@ -132,7 +125,7 @@ public class Network {
      * Get the content length of the url.
      * @return the content
      */
-    public static long getContentLength(String url) throws NoConnectionException {
+    public static long getContentLength(String url) throws NoConnectionException, IOException, StopException {
 
         if (offline)
             throw new NoConnectionException();
@@ -142,12 +135,12 @@ public class Network {
             HttpURLConnection conn = (HttpURLConnection)uri.openConnection();
             return conn.getContentLengthLong();
         }
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
+        }
         catch (UnknownHostException | NoRouteToHostException ignored){
             throw new NoConnectionException();
-        }
-        catch (IOException e){
-            LaebenApp.handleException(e);
-            return 0;
         }
     }
 
@@ -161,19 +154,6 @@ public class Network {
     }
 
     /**
-     * Get the url object from the url.
-     * @return the url object
-     */
-    public static URL getUrl(String url){
-        try{
-            return new URL(url);
-        }
-        catch (MalformedURLException ignored){
-            throw new RuntimeException();
-        }
-    }
-
-    /**
      * Stops all continuing download processes.
      */
     public static void stop(){
@@ -183,7 +163,7 @@ public class Network {
     /**
      * Patches and disables SSL. :))
      */
-    public static void patchSSL(){
+    public static boolean patchSSL(){
         try {
             var ssl = SSLContext.getInstance("SSL");
 
@@ -209,19 +189,19 @@ public class Network {
             HttpsURLConnection.setDefaultSSLSocketFactory(ssl.getSocketFactory());
 
             HttpsURLConnection.setDefaultHostnameVerifier((a, b) -> true);
-        }
-        catch (Exception e) {
-            LaebenApp.handleException(e);
+
+            return true;
+        } catch (KeyManagementException | NoSuchAlgorithmException ignored) {
+            return false;
         }
     }
 
     /**
      * Download a file from the net.
      * @param token network token
-     * @param handle progress handling
      * @return path of the downloaded file
      */
-    public static Path download(NetworkToken token, boolean handle) throws NoConnectionException, StopException, HttpException, FileNotFoundException {
+    public static Path download(NetworkToken token) throws NoConnectionException, StopException, HttpException, IOException {
         if (offline)
             throw new NoConnectionException();
         HttpsURLConnection conn = null;
@@ -247,15 +227,14 @@ public class Network {
             try(InputStream stream = conn.getInputStream();
                 FileOutputStream file = new FileOutputStream(destination.toFile())
             ){
-                byte[] buffer = new byte[4096];
+                byte[] buffer = new byte[8192];
                 int read;
                 while ((read = stream.read(buffer)) != -1){
-                    if (token.stopRequested())
+                    if (token.shouldStop())
                         throw new StopException();
                     file.write(buffer, 0, read);
                     progress += buffer.length;
-                    if (handle)
-                        handler.execute(new ProgressEvent(DOWNLOAD, progress, length));
+                    token.onReceivedProgress(progress, length);
                 }
             }
             destination.toFile().setLastModified(conn.getLastModified());
@@ -265,6 +244,10 @@ public class Network {
         }
         catch (FileNotFoundException fo){
             throw fo;
+        }
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
         catch (IOException ex){
             handleNetIO(ex, conn, url);
@@ -276,18 +259,17 @@ public class Network {
         return destination;
     }
 
-    private static void handleNetIO(IOException ex, HttpURLConnection conn, String url) throws HttpException {
+    private static void handleNetIO(IOException ex, HttpURLConnection conn, String url) throws HttpException, IOException, StopException {
         if (ex.getMessage().startsWith("Server returned")){
             String[] spl = ex.getMessage().split(":");
             if (spl.length != 4 || conn == null)
-                LaebenApp.handleException(ex);
+                throw ex;
             else {
                 int code = Integer.parseInt(spl[1].split(" ")[1]);
                 throw new HttpException(code, inputStreamToString(conn.getErrorStream()), url);
             }
         }
-        else
-            LaebenApp.handleException(ex);
+        else throw ex;
     }
 
     /**
@@ -296,7 +278,7 @@ public class Network {
      * @param body request body
      * @return the response
      */
-    public static String post(String url, String body) throws NoConnectionException {
+    public static String post(String url, String body) throws NoConnectionException, StopException, IOException {
         return post(url, body, null);
     }
 
@@ -307,7 +289,7 @@ public class Network {
      * @param headers headers
      * @return the response
      */
-    public static String post(String url, String body, List<RequestParameter> headers) throws NoConnectionException {
+    public static String post(String url, String body, List<RequestParameter> headers) throws NoConnectionException, StopException, IOException {
         String answer = null;
 
         if (offline)
@@ -340,8 +322,9 @@ public class Network {
                     try(InputStream stream = connection.getErrorStream()){
                         answer = streamToString(stream);
                     }
-                    catch (IOException ex){
-                        LaebenApp.handleException(ex);
+                    catch (InterruptedIOException | ClosedByInterruptException ignored){
+                        Thread.currentThread().interrupt();
+                        throw new StopException();
                     }
                 }
             }
@@ -349,23 +332,27 @@ public class Network {
         catch (UnknownHostException | NoRouteToHostException ignored){
             throw new NoConnectionException();
         }
-        catch (IOException e){
-            LaebenApp.handleException(e);
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
 
         return answer;
     }
-    private static String streamToString(InputStream str){
+    private static String streamToString(InputStream str) throws IOException, StopException {
         StringBuilder answer = new StringBuilder();
         try(InputStreamReader reader = new InputStreamReader(str)){
             char[] buffer = new char[4096];
             int read;
             while ((read = reader.read(buffer)) != -1){
+                if (Thread.currentThread().isInterrupted())
+                    throw new StopException();
                 answer.append(buffer, 0, read);
             }
         }
-        catch (IOException e){
-            LaebenApp.handleException(e);
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
 
         return answer.toString();
@@ -377,7 +364,7 @@ public class Network {
      * @param response response of the server
      * @return the request from the client
      */
-    public static String listenServer(int port, String response){
+    public static String listenServer(int port, String response) throws IOException, StopException {
         try(ServerSocket socket = new ServerSocket(port);
             Socket a = socket.accept();
             BufferedReader input = new BufferedReader(new InputStreamReader(a.getInputStream()));
@@ -399,9 +386,9 @@ public class Network {
 
             return content.toString();
         }
-        catch (Exception e){
-            LaebenApp.handleException(e);
-            return null;
+        catch (InterruptedIOException | ClosedByInterruptException ignored){
+            Thread.currentThread().interrupt();
+            throw new StopException();
         }
     }
 
