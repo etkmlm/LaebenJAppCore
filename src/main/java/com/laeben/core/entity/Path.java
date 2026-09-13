@@ -1,6 +1,9 @@
 package com.laeben.core.entity;
 
 import com.laeben.core.entity.exception.StopException;
+import com.laeben.core.event.context.EventContext;
+import com.laeben.core.event.function.ProgressFunction;
+import com.laeben.core.event.payload.ProgressPayload;
 import com.laeben.core.util.StrUtil;
 import org.apache.commons.compress.archivers.ArchiveEntry;
 import org.apache.commons.compress.archivers.ArchiveInputStream;
@@ -25,9 +28,70 @@ import java.util.zip.GZIPInputStream;
  * Advanced OS-based IO ecosystem.
  **/
 public class Path{
+    public static class TransferContext extends EventContext{
+        private final Path file;
+
+        /**
+         * @param filename file name
+         **/
+        public TransferContext(String filename) {
+            super(filename);
+
+            this.file = null;
+        }
+
+        /**
+         * @param file destination file
+         **/
+        public TransferContext(Path file) {
+            super(file.getName());
+
+            this.file = file;
+        }
+
+        /**
+         * @return destination file
+         */
+        public Path getFile() {
+            return file;
+        }
+
+        /**
+         * @return file name
+         */
+        public String getFilename() {
+            return getLabel();
+        }
+    }
+
+    public static class ParentItemTransferContext extends EventContext{
+        private final Path parent, file;
+
+        public ParentItemTransferContext(Path parent, Path file) {
+            super(file.getName());
+
+            this.parent = parent;
+            this.file = file;
+        }
+
+        /**
+         * @return destination parent
+         **/
+        public Path getParent() {
+            return parent;
+        }
+
+        /**
+         * @return destination file
+         **/
+        public Path getFile() {
+            return file;
+        }
+    }
+
     private static final int BUFFER_SIZE = 16384;
 
-    private java.nio.file.Path root;
+    private final java.nio.file.Path root;
     private Boolean isDirLocal;
 
     private Path(java.nio.file.Path root){
@@ -118,7 +182,7 @@ public class Path{
 
         delete();
 
-        root = newPath.toFile().toPath();
+        //root = newPath.toFile().toPath();
     }
 
     /**
@@ -299,16 +363,16 @@ public class Path{
         return new ZipArchiveEntry(p.toFile(), newPath.isEmpty() ? p.getName() : newPath);
     }
 
-    private void zipEntry(ZipArchiveOutputStream stream, Path root, Path p) throws StopException, IOException {
+    private void zipEntry(ZipArchiveOutputStream stream, Path root, Path p, ProgressFunction onProgress) throws StopException, IOException {
         stream.putArchiveEntry(getEntry(root, p));
         if (p.isDirectory()){
             for (var x : p.getFiles()){
-                zipEntry(stream, root, x);
+                zipEntry(stream, root, x, onProgress);
             }
         }
         else{
             try(FileInputStream str = new FileInputStream(p.toFile())) {
-                transferStreams(new byte[BUFFER_SIZE], str, stream);
+                transferStreams(new byte[BUFFER_SIZE], str, stream, ProgressPayload.create(onProgress, new TransferContext(p), p.getSize()));
             }
         }
 
@@ -319,8 +383,17 @@ public class Path{
      * @param fileName file name of the zip
      **/
     public void zip(Path fileName) throws IOException, StopException {
+        zip(fileName, null);
+    }
+
+    /**
+     * Compress path as zip.
+     * @param fileName file name of the zip
+     * @param onProgress progress function
+     **/
+    public void zip(Path fileName, ProgressFunction onProgress) throws IOException, StopException {
         try(ZipArchiveOutputStream stream = new ZipArchiveOutputStream(fileName.toFile())){
-            zipEntry(stream, this, this);
+            zipEntry(stream, this, this, onProgress);
             stream.closeArchiveEntry();
         }
         catch (InterruptedIOException | ClosedByInterruptException ignored){
@@ -379,6 +452,16 @@ public class Path{
      * @return entry byte stream
      **/
     public PossibilityResult<ByteArrayOutputStream> tryGetZipEntry(String... paths) throws IOException, StopException {
+        return tryGetZipEntry(null, paths);
+    }
+
+    /**
+     * Get the specified entry from the zip file.
+     * @param paths possible relative paths of the entry (foo/bar.json, foo/foo, etc.)
+     * @param onProgress progress function
+     * @return entry byte stream
+     **/
+    public PossibilityResult<ByteArrayOutputStream> tryGetZipEntry(ProgressFunction onProgress, String... paths) throws IOException, StopException {
         try(ZipArchiveInputStream stream = new ZipArchiveInputStream(Files.newInputStream(toFile().toPath()));
             ByteArrayOutputStream bytes = new ByteArrayOutputStream()){
             ZipArchiveEntry e;
@@ -402,7 +485,7 @@ public class Path{
                 if (!stream.canReadEntryData(e))
                     return null;
 
-                transferStreams(buff, stream, bytes);
+                transferStreams(buff, stream, bytes, ProgressPayload.create(onProgress, new TransferContext(e.getName()), e.getSize()));
 
                 return new PossibilityResult<>(px, bytes);
             }
@@ -433,27 +516,36 @@ public class Path{
         }
     }
 
-    private void extract(Path destination, ArchiveInputStream<?> stream, List<String> exclude) throws IOException, StopException {
+
+
+    private void extract(Path destination, ArchiveInputStream<?> stream, List<String> exclude, ProgressFunction onProgress) throws IOException, StopException {
         ArchiveEntry entry;
 
         byte[] buffer = new byte[BUFFER_SIZE];
 
+        int i = 0;
+
         while ((entry = stream.getNextEntry()) != null){
             if (Thread.currentThread().isInterrupted())
                 throw new StopException();
+
+            i++;
 
             String name = StrUtil.pure(entry.getName(), new char[]{'/'});
             if (exclude.stream().anyMatch(a -> StrUtil.pure(a).equals(name)))
                 continue;
 
             Path pp = destination.to(name);
+
+            if (onProgress != null) onProgress.onProgress(i, 0, new ParentItemTransferContext(destination, pp));
+
             File ff = pp.toFile();
             if (entry.isDirectory())
                 ff.mkdirs();
             else {
                 new File(ff.getParent()).mkdirs();
                 try(FileOutputStream f = new FileOutputStream(ff)) {
-                    transferStreams(buffer, stream, f);
+                    transferStreams(buffer, stream, f, ProgressPayload.create(onProgress, new TransferContext(entry.getName()), entry.getSize()));
                 }
                 pp.execPosix();
 
@@ -462,17 +554,17 @@ public class Path{
         }
     }
 
-    private void extractTar(Path destination, List<String> exclude) throws StopException, IOException {
+    private void extractTar(Path destination, List<String> exclude, ProgressFunction onProgress) throws StopException, IOException {
         try(GZIPInputStream gzip = new GZIPInputStream(Files.newInputStream(toFile().toPath()));
             TarArchiveInputStream tar = new TarArchiveInputStream(gzip)){
-            extract(destination, tar, exclude);
+            extract(destination, tar, exclude, onProgress);
         }
     }
 
-    private void extractZip(Path destination, List<String> exclude) throws StopException, IOException {
+    private void extractZip(Path destination, List<String> exclude, ProgressFunction onProgress) throws StopException, IOException {
         try(FileInputStream file = new FileInputStream(root.toFile());
             ZipArchiveInputStream zip = new ZipArchiveInputStream(file)){
-            extract(destination, zip, exclude);
+            extract(destination, zip, exclude, onProgress);
         }
     }
 
@@ -504,6 +596,16 @@ public class Path{
      * @param exclude excluded file names
      **/
     public void extract(Path destination, List<String> exclude) throws StopException, IOException {
+        extract(destination, exclude, null);
+    }
+
+    /**
+     * Extract the tar.gz, zip, or jar files.
+     * @param destination destination directory, not file
+     * @param exclude excluded file names
+     * @param onProgress progress function
+     **/
+    public void extract(Path destination, List<String> exclude, ProgressFunction onProgress) throws StopException, IOException {
         if (destination == null)
             destination = new Path(root.getParent());
 
@@ -512,10 +614,10 @@ public class Path{
 
         try{
             if (getExtension().equals("gz")){
-                extractTar(destination, exclude);
+                extractTar(destination, exclude, onProgress);
             }
             else if (getExtension().equals("zip") || getExtension().equals("jar"))
-                extractZip(destination, exclude);
+                extractZip(destination, exclude, onProgress);
         }
         catch (InterruptedIOException | ClosedByInterruptException ignored){
             Thread.currentThread().interrupt();
@@ -533,16 +635,19 @@ public class Path{
     /**
      * Copy the path to the destination. File will be overwritten default.
      * @param destination destination file or directory
-     */
+     **/
     public void copy(Path destination) throws IOException, StopException {
         copy(destination, true);
     }
 
-    private static void transferStreams(byte[] buffer, InputStream in, OutputStream out) throws IOException, StopException {
+    private static void transferStreams(byte[] buffer, InputStream in, OutputStream out, ProgressPayload progress) throws IOException, StopException {
+        assert progress != null;
+
         int read;
         while ((read = in.read(buffer)) > 0){
             if (Thread.currentThread().isInterrupted()) throw new StopException();
             out.write(buffer, 0, read);
+            progress.onProgress(read);
         }
     }
 
@@ -552,6 +657,16 @@ public class Path{
      * @param overwrite should be overwritten if exists
      **/
     public void copy(Path destination, boolean overwrite) throws StopException, IOException {
+        copy(destination, overwrite, null);
+    }
+
+    /**
+     * Copy the path to the destination.
+     * @param destination destination file or directory
+     * @param overwrite should be overwritten if exists
+     * @param onProgress progress function
+     **/
+    public void copy(Path destination, boolean overwrite, ProgressFunction onProgress) throws StopException, IOException {
         try{
             //destination.prepare();
             if (destination.exists() && !isDirectory()){
@@ -560,7 +675,11 @@ public class Path{
                 destination.delete();
             }
             if (isDirectory()){
-                for (var x : getFiles()){
+                final var files = getFiles();
+                final int size = files.size();
+                for (int i = 0; i < size; i++) {
+                    final var x = files.get(i);
+                    if (onProgress != null) onProgress.onProgress(i + 1, size, new ParentItemTransferContext(this, x));
                     x.copy(destination.to(x.getName()));
                 }
             }
@@ -568,7 +687,7 @@ public class Path{
                 destination.forceSetDir(false).prepare();
                 try(final var inFile = new FileInputStream(toFile());
                     final var outFile = new FileOutputStream(destination.toFile())){
-                    transferStreams(new byte[BUFFER_SIZE], inFile, outFile);
+                    transferStreams(new byte[BUFFER_SIZE], inFile, outFile, ProgressPayload.create(onProgress, new TransferContext(this), getSize()));
                 }
             }
         }
