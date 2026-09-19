@@ -29,31 +29,41 @@ import java.util.zip.GZIPInputStream;
  **/
 public class Path{
     public static class TransferContext extends EventContext{
-        private final Path file;
+        private final Path source;
+        private final Path destination;
 
+        /**
+         * @param source source file
+         * @param destination destination file
+         **/
+        public TransferContext(Path source, Path destination) {
+            super(source.getName());
+
+            this.source = source;
+            this.destination = destination;
+        }
+
+        /**
+         * @return source file
+         */
+        public Path getSourceFile() {
+            return source;
+        }
+
+        /**
+         * @return destination file, null if the destination is a zip entry
+         */
+        public Path getDestinationFile() {
+            return destination;
+        }
+    }
+
+    public static class ExtractionItemContext extends EventContext{
         /**
          * @param filename file name
          **/
-        public TransferContext(String filename) {
+        public ExtractionItemContext(String filename) {
             super(filename);
-
-            this.file = null;
-        }
-
-        /**
-         * @param file destination file
-         **/
-        public TransferContext(Path file) {
-            super(file.getName());
-
-            this.file = file;
-        }
-
-        /**
-         * @return destination file
-         */
-        public Path getFile() {
-            return file;
         }
 
         /**
@@ -64,10 +74,10 @@ public class Path{
         }
     }
 
-    public static class ParentItemTransferContext extends EventContext{
+    public static class ParentItemContext extends EventContext{
         private final Path parent, file;
 
-        public ParentItemTransferContext(Path parent, Path file) {
+        public ParentItemContext(Path parent, Path file) {
             super(file.getName());
 
             this.parent = parent;
@@ -178,6 +188,15 @@ public class Path{
      * @param newPath path of the new file or directory
      **/
     public void move(Path newPath) throws IOException, StopException {
+        move(newPath, null);
+    }
+
+    /**
+     * Move path.
+     * @param newPath path of the new file or directory
+     * @param onProgress progress function
+     **/
+    public void move(Path newPath, ProgressFunction onProgress) throws IOException, StopException {
         copy(newPath);
 
         delete();
@@ -372,7 +391,7 @@ public class Path{
         }
         else{
             try(FileInputStream str = new FileInputStream(p.toFile())) {
-                transferStreams(new byte[BUFFER_SIZE], str, stream, ProgressPayload.create(onProgress, new TransferContext(p), p.getSize()));
+                transferStreams(new byte[BUFFER_SIZE], str, stream, ProgressPayload.create(onProgress, new TransferContext(p, null), p.getSize()));
             }
         }
 
@@ -485,7 +504,7 @@ public class Path{
                 if (!stream.canReadEntryData(e))
                     return null;
 
-                transferStreams(buff, stream, bytes, ProgressPayload.create(onProgress, new TransferContext(e.getName()), e.getSize()));
+                transferStreams(buff, stream, bytes, ProgressPayload.create(onProgress, new ExtractionItemContext(e.getName()), e.getSize()));
 
                 return new PossibilityResult<>(px, bytes);
             }
@@ -521,15 +540,13 @@ public class Path{
     private void extract(Path destination, ArchiveInputStream<?> stream, List<String> exclude, ProgressFunction onProgress) throws IOException, StopException {
         ArchiveEntry entry;
 
-        byte[] buffer = new byte[BUFFER_SIZE];
+        long totalSize = this.getSize();
 
-        int i = 0;
+        byte[] buffer = new byte[BUFFER_SIZE];
 
         while ((entry = stream.getNextEntry()) != null){
             if (Thread.currentThread().isInterrupted())
                 throw new StopException();
-
-            i++;
 
             String name = StrUtil.pure(entry.getName(), new char[]{'/'});
             if (exclude.stream().anyMatch(a -> StrUtil.pure(a).equals(name)))
@@ -537,7 +554,7 @@ public class Path{
 
             Path pp = destination.to(name);
 
-            if (onProgress != null) onProgress.onProgress(i, 0, new ParentItemTransferContext(destination, pp));
+            if (onProgress != null) onProgress.onProgress(stream.getBytesRead(), totalSize, new ParentItemContext(destination, pp));
 
             File ff = pp.toFile();
             if (entry.isDirectory())
@@ -545,7 +562,7 @@ public class Path{
             else {
                 new File(ff.getParent()).mkdirs();
                 try(FileOutputStream f = new FileOutputStream(ff)) {
-                    transferStreams(buffer, stream, f, ProgressPayload.create(onProgress, new TransferContext(entry.getName()), entry.getSize()));
+                    transferStreams(buffer, stream, f, ProgressPayload.create(onProgress, new ExtractionItemContext(entry.getName()), entry.getSize()));
                 }
                 pp.execPosix();
 
@@ -679,15 +696,16 @@ public class Path{
                 final int size = files.size();
                 for (int i = 0; i < size; i++) {
                     final var x = files.get(i);
-                    if (onProgress != null) onProgress.onProgress(i + 1, size, new ParentItemTransferContext(this, x));
-                    x.copy(destination.to(x.getName()));
+                    final var dest = destination.to(x.getName());
+                    if (onProgress != null) onProgress.onProgress(i + 1, size, new ParentItemContext(this, dest));
+                    x.copy(dest, true, onProgress);
                 }
             }
             else{
                 destination.forceSetDir(false).prepare();
                 try(final var inFile = new FileInputStream(toFile());
                     final var outFile = new FileOutputStream(destination.toFile())){
-                    transferStreams(new byte[BUFFER_SIZE], inFile, outFile, ProgressPayload.create(onProgress, new TransferContext(this), getSize()));
+                    transferStreams(new byte[BUFFER_SIZE], inFile, outFile, ProgressPayload.create(onProgress, new TransferContext(this, destination), getSize()));
                 }
             }
         }

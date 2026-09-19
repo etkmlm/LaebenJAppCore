@@ -15,6 +15,10 @@ public class BaseEvent<T extends EventContext, H extends BaseEvent<T, H>> {
         return context;
     }
 
+    public boolean inContext(EventContext ctx) {
+        return context.equals(ctx);
+    }
+
     /**
      * Unchecked casting over the source.
      * @return cast source

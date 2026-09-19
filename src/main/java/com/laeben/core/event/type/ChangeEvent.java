@@ -1,15 +1,15 @@
 package com.laeben.core.event.type;
 
-import com.laeben.core.event.context.ChangeContext;
+import com.laeben.core.event.context.EventContext;
 
 /**
  * Handler compatible event to be used in difference trackings.
  */
-public class ChangeEvent extends BaseEvent<ChangeContext, ChangeEvent>{
+public class ChangeEvent<T extends EventContext> extends BaseEvent<T, ChangeEvent<T>>{
     private final Object oldValue;
     private final Object newValue;
 
-    public ChangeEvent(ChangeContext context, Object oldValue, Object newValue) {
+    public ChangeEvent(T context, Object oldValue, Object newValue) {
         super(context);
 
         this.oldValue = oldValue;

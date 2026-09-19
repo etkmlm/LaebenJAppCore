@@ -1,6 +1,6 @@
 package com.laeben.core.event.type;
 
-import com.laeben.core.event.context.ProgressContext;
+import com.laeben.core.event.context.EventContext;
 
 /**
  * Handler compatible event to be used in moderate progressions.
@@ -8,11 +8,11 @@ import com.laeben.core.event.context.ProgressContext;
  * Prefer {@link com.laeben.core.event.function.ProgressFunction} instead for high-performance
  * events.
  */
-public class ProgressEvent extends BaseEvent<ProgressContext, ProgressEvent> {
+public class ProgressEvent<T extends EventContext> extends BaseEvent<T, ProgressEvent<T>> {
     private final long current;
     private final long total;
 
-    public ProgressEvent(ProgressContext context, long current, long total) {
+    public ProgressEvent(T context, long current, long total) {
         super(context);
 
         this.current = current;

@@ -1,14 +1,14 @@
 package com.laeben.core.event.type;
 
-import com.laeben.core.event.context.ValueContext;
+import com.laeben.core.event.context.EventContext;
 
 /**
  * Handler compatible event to be used in distributing a data.
  */
-public class ValueEvent extends BaseEvent<ValueContext, ValueEvent> {
+public class ValueEvent<T extends EventContext> extends BaseEvent<T, ValueEvent<T>> {
     private final Object value;
 
-    public ValueEvent(ValueContext context, Object value) {
+    public ValueEvent(T context, Object value) {
         super(context);
 
         this.value = value;
