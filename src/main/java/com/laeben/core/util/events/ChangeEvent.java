@@ -5,6 +5,7 @@ package com.laeben.core.util.events;
  * <br/>
  * Includes the source, the key, old and new value.
  */
+@Deprecated
 public class ChangeEvent extends KeyEvent {
     private final Object oldValue;
     private final Object newValue;

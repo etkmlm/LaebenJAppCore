@@ -5,6 +5,7 @@ package com.laeben.core.util.events;
  * <br/>
  * Includes the source.
  */
+@Deprecated
 public class BaseEvent {
     private Object source;
     public BaseEvent() {

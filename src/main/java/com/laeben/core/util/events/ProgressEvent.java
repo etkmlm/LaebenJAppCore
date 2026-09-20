@@ -5,6 +5,7 @@ package com.laeben.core.util.events;
  * <br/>
  * Includes the source, the key, current, and the total value.
  */
+@Deprecated
 public class ProgressEvent extends KeyEvent {
     private final long current;
     private final long total;

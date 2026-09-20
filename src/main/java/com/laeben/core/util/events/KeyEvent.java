@@ -5,6 +5,7 @@ package com.laeben.core.util.events;
  * <br/>
  * Includes the source, the key.
  */
+@Deprecated
 public class KeyEvent extends BaseEvent {
     private final String key;
     public KeyEvent(String key) {

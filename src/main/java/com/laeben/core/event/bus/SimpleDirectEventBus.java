@@ -8,7 +8,7 @@ import com.laeben.core.event.type.BaseEvent;
 public class SimpleDirectEventBus<T extends EventContext, H extends BaseEvent<T, H>> extends DirectEventBus<T, H> {
     @Override
     protected void onExceptionThrown(Object clazz, EventRegister<T, H> register, H event, Throwable exception) {
-        System.out.printf("Exception thrown on a class (%s) for event '%s' [isAsync: %b]", clazz.getClass().getName() + "@" + clazz.hashCode(), event.getContext().toString(), register.isAsync());
+        System.out.printf("Exception thrown on a class (%s) for event '%s' [flags: %d]", clazz.getClass().getName() + "@" + clazz.hashCode(), event.getContext().toString(), register.flags());
         exception.printStackTrace();
     }
 }

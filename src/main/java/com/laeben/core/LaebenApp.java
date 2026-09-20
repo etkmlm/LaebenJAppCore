@@ -11,9 +11,7 @@ import com.laeben.core.entity.TranslationBundle;
 import com.laeben.core.entity.exception.HttpException;
 import com.laeben.core.entity.exception.NoConnectionException;
 import com.laeben.core.entity.exception.StopException;
-import com.laeben.core.util.EventHandler;
 import com.laeben.core.network.requester.RequesterFactory;
-import com.laeben.core.util.events.BaseEvent;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,7 +26,6 @@ public class LaebenApp {
     public static final String EXCEPTION = "exception";
     private static final String FIREBASE = "https://laeben-update-default-rtdb.europe-west1.firebasedatabase.app/";
     private static final RequesterFactory requester = new RequesterFactory(FIREBASE);
-    private static final EventHandler<BaseEvent> handler = new EventHandler<>();
 
     private static final Gson GSON = new GsonBuilder()
             //.registerTypeAdapter(Date.class, new Announcement.DateFactory())
@@ -63,10 +60,6 @@ public class LaebenApp {
 
     public String getIcon(){
         return icon;
-    }
-
-    public static EventHandler<BaseEvent> getHandler(){
-        return handler;
     }
 
     public static LaebenApp get(String id, String defaultName) throws NoConnectionException, HttpException, IOException, StopException {

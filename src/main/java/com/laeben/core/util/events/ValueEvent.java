@@ -5,6 +5,7 @@ package com.laeben.core.util.events;
  * <br/>
  * Includes the source, the key, and the value.
  */
+@Deprecated
 public class ValueEvent extends KeyEvent{
     private final Object value;
     public ValueEvent(String key, Object value) {

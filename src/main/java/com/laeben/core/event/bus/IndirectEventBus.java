@@ -12,6 +12,8 @@ import java.util.concurrent.Executors;
  * Asynchronous event bus.
  */
 public abstract class IndirectEventBus<T extends EventContext, H extends BaseEvent<T, H>> extends EventBus<T, H> {
+    public static final int FLAG_ASYNC = 0b1;
+
     private final ExecutorService executor;
     private CancellableToken<?> cancellableToken;
 
@@ -30,7 +32,7 @@ public abstract class IndirectEventBus<T extends EventContext, H extends BaseEve
     }
 
     protected boolean onEvent(Object clazz, EventRegister<T, H> register, H event, CancellableToken<?> cancellableToken){
-        if (register.isAsync()) executor.submit(() -> handle(clazz, register, event, cancellableToken));
+        if (register.checkFlag(FLAG_ASYNC)) executor.submit(() -> handle(clazz, register, event, cancellableToken));
         else return handle(clazz, register, event, cancellableToken);
 
         return true;

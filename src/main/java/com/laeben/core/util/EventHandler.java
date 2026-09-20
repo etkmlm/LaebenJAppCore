@@ -10,6 +10,7 @@ import java.util.function.Consumer;
 /**
  * Basic event handler.
  */
+@Deprecated
 public class EventHandler<T extends BaseEvent> {
     public static class ExReg<T extends BaseEvent>{
         private final Register<T> reg;
@@ -75,6 +76,7 @@ public class EventHandler<T extends BaseEvent> {
             ex.reg().getEx().accept(ex.event());
     }
 
+    @SuppressWarnings("CallToPrintStackTrace")
     protected void onExceptionThrown(ExReg<T> reg){
         reg.exception.printStackTrace();
     }

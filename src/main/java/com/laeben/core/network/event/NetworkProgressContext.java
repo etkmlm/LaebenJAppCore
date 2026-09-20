@@ -1,9 +1,8 @@
 package com.laeben.core.network.event;
 
 import com.laeben.core.event.context.EventContext;
-import com.laeben.core.event.context.ProgressContext;
 
-public final class NetworkProgressContext extends ProgressContext {
+public final class NetworkProgressContext extends EventContext {
     public static final String LABEL = "NetworkProgress";
     public static final NetworkProgressContext SELF = new NetworkProgressContext(LABEL);
 

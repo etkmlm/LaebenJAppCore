@@ -9,11 +9,11 @@ public class EventRegister<T extends EventContext, H extends BaseEvent<T, H>> {
         void handle(H event) throws Throwable;
     }
 
-    private final boolean async;
+    private final int flags;
     private final Handler<T, H> handler;
 
-    public EventRegister(Handler<T, H> handler, boolean async){
-        this.async = async;
+    public EventRegister(Handler<T, H> handler, int flags){
+        this.flags = flags;
         this.handler = handler;
     }
 
@@ -21,7 +21,10 @@ public class EventRegister<T extends EventContext, H extends BaseEvent<T, H>> {
         return handler;
     }
 
-    public boolean isAsync(){
-        return async;
+    public int flags(){
+        return flags;
+    }
+    public boolean checkFlag(int flags){
+        return (this.flags & flags) == flags;
     }
 }
